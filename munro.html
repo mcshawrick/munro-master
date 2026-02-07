@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Munro Master - Working Version</title>
+    <title>Munro Master - 50 Munros</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -140,6 +140,18 @@
         .munro-name { font-weight: bold; font-size: 1.125rem; }
         .munro-gaelic { font-size: 0.875rem; color: var(--heather-purple); font-style: italic; }
         .munro-meta { display: flex; gap: 1rem; font-size: 0.875rem; color: var(--mist-grey); margin-top: 0.5rem; }
+        .load-more {
+            width: 100%;
+            padding: 1rem;
+            margin: 1rem 0;
+            background: var(--heather-purple);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
         .modal {
             display: none;
             position: fixed;
@@ -281,7 +293,6 @@
         </button>
     </nav>
 
-    <!-- LIST SECTION -->
     <section id="list-section" class="content-section active">
         <div class="stats-grid">
             <div class="stat-card">
@@ -309,9 +320,9 @@
         </div>
 
         <div class="munro-list" id="munro-list"></div>
+        <button class="load-more" id="load-more" onclick="loadMore()">Load More Munros</button>
     </section>
 
-    <!-- COLLECTION/MAP SECTION -->
     <section id="collection-section" class="content-section">
         <div id="collection-map"></div>
         <div style="text-align: center; color: var(--mist-grey); padding: 2rem;">
@@ -320,7 +331,6 @@
         </div>
     </section>
 
-    <!-- PROFILE SECTION -->
     <section id="profile-section" class="content-section">
         <div style="background: var(--white); padding: 2rem; border-radius: 12px; text-align: center;">
             <div style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, var(--munro-green), var(--heather-purple)); display: flex; align-items: center; justify-content: center; font-size: 3rem; margin: 0 auto 1rem;">🏔️</div>
@@ -331,7 +341,6 @@
         </div>
     </section>
 
-    <!-- MUNRO DETAIL MODAL -->
     <div class="modal" id="munro-detail-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -342,7 +351,6 @@
         </div>
     </div>
 
-    <!-- NEARBY MODAL -->
     <div class="modal" id="nearby-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -359,15 +367,14 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Data
-        const munros = [
-            {id: 1, name: "Ben Nevis", gaelic: "Beinn Nibheis", elevation: 1345, region: "Fort William", difficulty: "Hard", lat: 56.7968, lng: -5.0035, bagged: false, description: "The highest mountain in the British Isles.", photos: []},
-            {id: 2, name: "Ben Macdui", gaelic: "Beinn Mac Duibh", elevation: 1309, region: "Cairngorms", difficulty: "Moderate", lat: 57.0704, lng: -3.6686, bagged: false, description: "The second highest peak in Britain.", photos: []},
-            {id: 3, name: "Braeriach", gaelic: "Am Bràigh Riabhach", elevation: 1296, region: "Cairngorms", difficulty: "Hard", lat: 57.0783, lng: -3.7280, bagged: false, description: "The third highest mountain in Britain.", photos: []},
-            {id: 4, name: "Ben Lawers", gaelic: "Beinn Labhair", elevation: 1214, region: "Perthshire", difficulty: "Moderate", lat: 56.5449, lng: -4.2208, bagged: false, description: "The highest peak in the southern Highlands.", photos: []},
-            {id: 5, name: "Ben Cruachan", gaelic: "Beinn Cruachan", elevation: 1126, region: "Loch Lomond", difficulty: "Hard", lat: 56.4264, lng: -5.1329, bagged: false, description: "The highest peak in Argyll.", photos: []},
-            {id: 6, name: "Schiehallion", gaelic: "Sìdh Chailleann", elevation: 1083, region: "Perthshire", difficulty: "Moderate", lat: 56.6669, lng: -4.1002, bagged: false, description: "The Fairy Hill of the Caledonians.", photos: []}
-        ];
+        // LAZY LOADING VARIABLES
+        let allMunros = [];
+        let displayedCount = 0;
+        const BATCH_SIZE = 10;
+        
+        let currentFilter = 'all';
+        let currentMunroId = null;
+        let map = null;
 
         const mockNearbyUsers = [
             {name: "HighlandHarry", bagged: 47, avatar: "🏔️", distance: 2.5, isOnline: true},
@@ -376,20 +383,33 @@
             {name: "AberdeenAngus", bagged: 156, avatar: "🐂", distance: 8.1, isOnline: true}
         ];
 
-        let currentFilter = 'all';
-        let currentMunroId = null;
-        let map = null;
+        // LOAD MUNROS FROM JSON
+        async function loadMunros() {
+            try {
+                const response = await fetch('munros.json');
+                allMunros = await response.json();
+                
+                // Add photos array if not present
+                allMunros.forEach(m => {
+                    if (!m.photos) m.photos = [];
+                });
+                
+                loadData(); // Load saved progress
+                displayedCount = 0;
+                renderMunros();
+                updateStats();
+            } catch (error) {
+                console.error('Failed to load munros:', error);
+                showToast('Failed to load Munros data');
+            }
+        }
 
-        // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            loadData();
+            loadMunros();
             setupEventListeners();
-            renderMunros();
-            updateStats();
         });
 
         function setupEventListeners() {
-            // Navigation
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.addEventListener('click', function() {
                     const section = this.dataset.section;
@@ -397,24 +417,24 @@
                 });
             });
 
-            // Filter chips
             document.querySelectorAll('.filter-chip').forEach(chip => {
                 chip.addEventListener('click', function() {
                     document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
                     this.classList.add('active');
                     currentFilter = this.dataset.filter;
+                    displayedCount = 0; // Reset to show from beginning
                     renderMunros();
                 });
             });
 
-            // Search
-            document.getElementById('search-input').addEventListener('input', renderMunros);
-
-            // Profile buttons
+            document.getElementById('search-input').addEventListener('input', function() {
+                displayedCount = 0;
+                renderMunros();
+            });
+            
             document.getElementById('btn-nearby').addEventListener('click', showNearbyModal);
             document.getElementById('profile-name').addEventListener('change', saveProfile);
 
-            // Close modals on backdrop click
             document.getElementById('munro-detail-modal').addEventListener('click', function(e) {
                 if (e.target === this) closeMunroDetail();
             });
@@ -424,35 +444,33 @@
         }
 
         function switchSection(section, clickedNav) {
-            // Update nav
             document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
             clickedNav.classList.add('active');
-
-            // Update sections
             document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active'));
             document.getElementById(section + '-section').classList.add('active');
-
-            // Init map if needed
-            if (section === 'collection' && !map) {
-                setTimeout(initMap, 100);
-            }
+            if (section === 'collection' && !map) setTimeout(initMap, 100);
         }
 
-        function renderMunros() {
-            const container = document.getElementById('munro-list');
-            let filtered = munros;
-
-            // Apply filter
-            if (currentFilter === 'bagged') filtered = munros.filter(m => m.bagged);
-            if (currentFilter === 'unbagged') filtered = munros.filter(m => !m.bagged);
-
-            // Apply search
+        function getFilteredMunros() {
+            let filtered = allMunros;
+            
+            if (currentFilter === 'bagged') filtered = allMunros.filter(m => m.bagged);
+            if (currentFilter === 'unbagged') filtered = allMunros.filter(m => !m.bagged);
+            
             const searchTerm = document.getElementById('search-input').value.toLowerCase();
             if (searchTerm) {
                 filtered = filtered.filter(m => m.name.toLowerCase().includes(searchTerm));
             }
+            
+            return filtered;
+        }
 
-            container.innerHTML = filtered.map(munro => `
+        function renderMunros() {
+            const container = document.getElementById('munro-list');
+            const filtered = getFilteredMunros();
+            const toShow = filtered.slice(0, displayedCount + BATCH_SIZE);
+            
+            container.innerHTML = toShow.map(munro => `
                 <div class="munro-card ${munro.bagged ? 'bagged' : ''}" onclick="openMunroDetail(${munro.id})">
                     <div class="munro-image" style="background: linear-gradient(135deg, ${getRegionColor(munro.region)}40, ${getRegionColor(munro.region)}60);">
                         ${munro.bagged ? '✅' : '🏔️'}
@@ -471,16 +489,32 @@
                     </div>
                 </div>
             `).join('');
+            
+            displayedCount = toShow.length;
+            
+            // Show/hide load more button
+            const loadMoreBtn = document.getElementById('load-more');
+            if (displayedCount >= filtered.length) {
+                loadMoreBtn.style.display = 'none';
+            } else {
+                loadMoreBtn.style.display = 'block';
+                loadMoreBtn.textContent = `Load More (${filtered.length - displayedCount} left)`;
+            }
+        }
+
+        function loadMore() {
+            renderMunros();
         }
 
         function getRegionColor(region) {
-            const colors = {'Fort William': '#1a3d2e', 'Cairngorms': '#5b4b6b', 'Perthshire': '#c75b3b', 'Loch Lomond': '#2c5f6f'};
+            const colors = {'Fort William': '#1a3d2e', 'Cairngorms': '#5b4b6b', 'Perthshire': '#c75b3b', 'Loch Lomond': '#2c5f6f', 'Skye': '#8b2635'};
             return colors[region] || '#1a3d2e';
         }
 
         function openMunroDetail(id) {
             currentMunroId = id;
-            const munro = munros.find(m => m.id === id);
+            const munro = allMunros.find(m => m.id === id);
+            if (!munro) return;
             
             const content = document.getElementById('munro-detail-content');
             content.innerHTML = `
@@ -489,7 +523,6 @@
                     <h2 style="color: var(--munro-green);">${munro.name}</h2>
                     <p style="color: var(--heather-purple); font-style: italic;">${munro.gaelic}</p>
                 </div>
-                
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; text-align: center;">
                     <div style="background: var(--off-white); padding: 1rem; border-radius: 8px;">
                         <div style="font-weight: bold; color: var(--munro-green);">${munro.elevation}m</div>
@@ -504,27 +537,22 @@
                         <div style="font-size: 0.75rem; color: var(--mist-grey);">Region</div>
                     </div>
                 </div>
-
                 <div style="background: #f8f4e8; padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem; border-left: 4px solid var(--munro-gold);">
                     <p style="color: var(--munro-green); line-height: 1.6;">${munro.description}</p>
                 </div>
-
                 <button class="bag-button ${munro.bagged ? 'bagged' : 'bag'}" onclick="toggleBag()" ${munro.bagged ? 'disabled' : ''}>
                     ${munro.bagged ? '✓ Already Bagged!' : '🎯 Bag This Munro!'}
                 </button>
-
                 <div class="action-buttons">
                     <button class="action-btn" onclick="openMaps(${munro.id})">🗺️ Open in Maps</button>
                     <button class="action-btn" onclick="shareMunro(${munro.id})">📤 Share</button>
                 </div>
-
                 <div class="photo-upload-area" onclick="document.getElementById('photo-input').click()">
                     <div style="font-size: 2rem; margin-bottom: 0.5rem;">📷</div>
                     <div style="font-weight: 600; color: var(--heather-purple);">Add Photo</div>
                     <div style="font-size: 0.875rem; color: var(--mist-grey);">Tap to take photo</div>
                     <input type="file" id="photo-input" class="file-input" accept="image/*" capture="environment" onchange="handlePhoto(this)">
                 </div>
-
                 ${munro.photos.length > 0 ? `
                     <div class="photo-grid">
                         ${munro.photos.map((photo, idx) => `
@@ -535,7 +563,6 @@
                     </div>
                 ` : ''}
             `;
-
             document.getElementById('munro-detail-modal').classList.add('active');
         }
 
@@ -544,7 +571,7 @@
         }
 
         function toggleBag() {
-            const munro = munros.find(m => m.id === currentMunroId);
+            const munro = allMunros.find(m => m.id === currentMunroId);
             munro.bagged = true;
             munro.dateBagged = new Date().toISOString();
             saveData();
@@ -560,7 +587,7 @@
             if (input.files && input.files[0]) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    const munro = munros.find(m => m.id === currentMunroId);
+                    const munro = allMunros.find(m => m.id === currentMunroId);
                     munro.photos.push(e.target.result);
                     saveData();
                     openMunroDetail(currentMunroId);
@@ -576,14 +603,13 @@
         }
 
         function openMaps(id) {
-            const munro = munros.find(m => m.id === id);
+            const munro = allMunros.find(m => m.id === id);
             window.open(`https://www.google.com/maps/search/?api=1&query=${munro.lat},${munro.lng}`, '_blank');
         }
 
         function shareMunro(id) {
-            const munro = munros.find(m => m.id === id);
+            const munro = allMunros.find(m => m.id === id);
             const text = `I bagged ${munro.name} (${munro.elevation}m) with Munro Master! 🏔️`;
-            
             if (navigator.share) {
                 navigator.share({title: 'Munro Master', text: text});
             } else {
@@ -603,8 +629,7 @@
         function updateMapMarkers() {
             if (!map) return;
             map.eachLayer(layer => { if (layer instanceof L.Marker) map.removeLayer(layer); });
-            
-            munros.forEach(munro => {
+            allMunros.forEach(munro => {
                 const color = munro.bagged ? '#c9a227' : '#8b9a8b';
                 L.circleMarker([munro.lat, munro.lng], {
                     radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9
@@ -615,18 +640,12 @@
         function showNearbyModal() {
             const content = document.getElementById('nearby-content');
             content.innerHTML = '<div style="text-align: center; padding: 2rem;"><div style="width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: var(--munro-green); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>Finding nearby baggers...</div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>';
-            
             document.getElementById('nearby-modal').classList.add('active');
-            
-            // Simulate finding nearby users
-            setTimeout(() => {
-                renderNearbyList();
-            }, 1500);
+            setTimeout(renderNearbyList, 1500);
         }
 
         function renderNearbyList() {
             const content = document.getElementById('nearby-content');
-            
             content.innerHTML = `
                 <div style="margin-bottom: 1rem; text-align: center; color: var(--mist-grey);">
                     ${mockNearbyUsers.length} baggers found nearby
@@ -656,9 +675,9 @@
         }
 
         function updateStats() {
-            const bagged = munros.filter(m => m.bagged).length;
+            const bagged = allMunros.filter(m => m.bagged).length;
             document.getElementById('bagged-count').textContent = bagged;
-            document.getElementById('total-count').textContent = munros.length;
+            document.getElementById('total-count').textContent = allMunros.length;
             document.getElementById('streak-count').textContent = bagged > 0 ? '🔥1' : '0';
         }
 
@@ -669,7 +688,7 @@
         }
 
         function exportData() {
-            const data = {munros: munros, exportDate: new Date().toISOString()};
+            const data = {munros: allMunros, exportDate: new Date().toISOString()};
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -680,17 +699,26 @@
         }
 
         function saveData() {
-            localStorage.setItem('munroMaster_data', JSON.stringify(munros));
+            // Save just the bagged status and photos to keep it small
+            const saveData = allMunros.map(m => ({
+                id: m.id,
+                bagged: m.bagged,
+                dateBagged: m.dateBagged,
+                photos: m.photos
+            }));
+            localStorage.setItem('munroMaster_progress', JSON.stringify(saveData));
         }
 
         function loadData() {
-            const saved = localStorage.getItem('munroMaster_data');
+            const saved = localStorage.getItem('munroMaster_progress');
             if (saved) {
-                const data = JSON.parse(saved);
-                data.forEach((m, i) => {
-                    if (munros[i]) {
-                        munros[i].bagged = m.bagged || false;
-                        munros[i].photos = m.photos || [];
+                const progress = JSON.parse(saved);
+                progress.forEach(p => {
+                    const munro = allMunros.find(m => m.id === p.id);
+                    if (munro) {
+                        munro.bagged = p.bagged || false;
+                        munro.dateBagged = p.dateBagged || null;
+                        munro.photos = p.photos || [];
                     }
                 });
             }
